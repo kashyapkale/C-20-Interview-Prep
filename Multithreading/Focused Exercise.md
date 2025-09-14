@@ -62,7 +62,6 @@ int main() {
 #include <vector>
 #include <chrono>
 
-// TODO: Implement this function. It should sum all numbers from 1 to 'max_num'.
 // To simulate real work, make it sleep for 2 seconds before returning the result.
 long long slow_summer(long long max_num) {
     std::cout << "      [TASK] Starting slow sum..." << std::endl;
@@ -78,14 +77,12 @@ long long slow_summer(long long max_num) {
 int main() {
     std::cout << "[MAIN] Launching the summer task asynchronously." << std::endl;
 
-    // Launch the task. std::async returns a std::future immediately.
-    std::future<long long> sum_future = std::async(std::launch::async, slow_summer, 100000);
+    //TODO :: Launch the task. std::async returns a std::future immediately.
 
     std::cout << "[MAIN] The task is running in the background. Main thread is not blocked." << std::endl;
     std::cout << "[MAIN] Doing other work..." << std::endl;
 
-    // The .get() call will block here until the future has a value.
-    long long result = sum_future.get();
+    // TODO :: The .get() call will block here until the future has a value.
 
     std::cout << "[MAIN] The calculated sum is: " << result << std::endl;
 }
@@ -99,7 +96,7 @@ int main() {
 [MAIN] The task is running in the background. Main thread is not blocked.
 [MAIN] Doing other work...
       [TASK] Finished slow sum.
-[MAIN] The calculated sum is: 5000050000
+[MAIN] The calculated sum is: {any number that returns from fun}
 ```
 
 -----
