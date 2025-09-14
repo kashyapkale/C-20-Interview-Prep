@@ -251,177 +251,125 @@ Complete the `TelemetryProcessor` class below. You will need to use the C++ conc
 #include <vector>
 #include <queue>
 #include <thread>
-#include <jthread> // For std::jthread
+#include <jthread>
 #include <mutex>
 #include <condition_variable>
 #include <future>
-#include <semaphore> // For std::counting_semaphore
-#include <latch>    // For std::latch
+#include <semaphore>
+#include <latch>
 #include <functional>
 #include <numeric>
 
-// GIVEN CODE: You do not need to change these structures.
+// GIVEN CODE
 struct RawData {
     int id;
     double value;
 };
-
 struct ProcessedData {
     int source_id;
     double processed_value;
 };
-
-// GIVEN CODE: A mock function to simulate work.
 ProcessedData process_data(const RawData& data) {
-    // Simulate some time-consuming work
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     return {data.id, data.value * 1.5};
 }
-
-
-// A Task for our queue will contain the raw data and a promise to fulfill the result
 using Task = std::pair<RawData, std::promise<ProcessedData>>;
 
-
-// YOUR TASK: Complete this class.
 class TelemetryProcessor {
 private:
     const int num_threads_;
     const int max_licenses_;
 
-    // TODO 1: Choose the right containers for threads and the task queue.
-    std::vector<std::jthread> worker_threads_;
-    std::queue<Task> task_queue_;
-
-    // TODO 2: Choose the right synchronization primitives.
-    std::mutex queue_mutex_;
-    std::condition_variable cv_;
-    std::counting_semaphore license_semaphore_;
-    std::latch start_latch_;
+    // TODO 1: Declare all necessary member variables for:
+    // - Storing worker threads (hint: std::vector of jthreads)
+    // - A task queue (hint: std::queue of Task)
+    // - A mutex for the queue
+    // - A condition variable for the queue
+    // - A semaphore for managing licenses
+    // - A latch for starting the workers simultaneously
+    /* YOUR CODE HERE */
 
 public:
     TelemetryProcessor(int num_threads, int max_licenses)
         : num_threads_(num_threads),
-          max_licenses_(max_licenses),
-          // TODO 3: Initialize your synchronization primitives.
-          // The semaphore should be initialized with the number of available licenses.
-          // The latch should be initialized to wait for the start_processing() signal.
-          license_semaphore_(max_licenses_),
-          start_latch_(1)
+          max_licenses_(max_licenses)
+          // TODO 2: Initialize your synchronization member variables in the initializer list.
+          // The semaphore should be initialized with `max_licenses`.
+          // The latch should be initialized to wait for one signal.
     {
-        // TODO 4: Create and start the worker threads.
+        // TODO 3: Create and start the worker threads, storing them in your member variable.
         // Each thread should run the `worker_loop` function.
-        // Pass the jthread's stop_token to the loop.
-        for (int i = 0; i < num_threads_; ++i) {
-            worker_threads_.emplace_back([this](std::stop_token st) {
-                this->worker_loop(st);
-            });
-        }
+        /* YOUR CODE HERE */
     }
 
-    // The main loop for each worker thread.
     void worker_loop(std::stop_token st) {
-        // TODO 5: Wait for the start signal from the main thread.
-        start_latch_.wait();
-        std::cout << "Worker " << std::this_thread::get_id() << " started processing." << std::endl;
-
-        // The loop continues until a stop is requested.
+        // TODO 4: Wait for the start signal using your latch.
+        /* YOUR CODE HERE */
+        
         while (!st.stop_requested()) {
+            // TODO 5: Acquire a license from your semaphore.
+            /* YOUR CODE HERE */
+
+            std::unique_lock<std::mutex> lock(queue_mutex_); // Note: queue_mutex_ will need to be your declared mutex
+            // TODO 6: Wait on your condition variable until the queue has a task OR a stop is requested.
+            /* YOUR CODE HERE */
             
-            // TODO 6: Acquire a processing license. This will block if all licenses are in use.
-            license_semaphore_.acquire();
-
-            std::unique_lock<std::mutex> lock(queue_mutex_);
-            // TODO 7: Wait for a task to be available in the queue OR for a stop request.
-            // Use the stop_token in the condition variable's wait predicate.
-            cv_.wait(lock, [this, &st]() {
-                return !task_queue_.empty() || st.stop_requested();
-            });
-
-            // If a stop was requested while waiting, release the license and exit.
             if (st.stop_requested()) {
-                license_semaphore_.release();
+                license_semaphore_.release(); // Note: license_semaphore_ will need to be your declared semaphore
                 break;
             }
 
-            // Get the task from the queue.
-            Task current_task = std::move(task_queue_.front());
+            Task current_task = std::move(task_queue_.front()); // Note: task_queue_ will be your declared queue
             task_queue_.pop();
-            lock.unlock(); // Release the lock as soon as possible.
+            lock.unlock();
 
-            // Process the data (this is the "work").
             ProcessedData result = process_data(current_task.first);
-            std::cout << "    Worker " << std::this_thread::get_id() << " processed data ID " << result.source_id << std::endl;
+            
+            // TODO 7: Fulfill the promise.
+            /* YOUR CODE HERE */
 
-            // TODO 8: Fulfill the promise with the result.
-            current_task.second.set_value(result);
-
-            // TODO 9: Release the processing license so another thread can use it.
-            license_semaphore_.release();
+            // TODO 8: Release the license back to your semaphore.
+            /* YOUR CODE HERE */
         }
-        std::cout << "Worker " << std::this_thread::get_id() << " shutting down." << std::endl;
     }
 
-    // Submits a new piece of data to be processed and returns a future for its result.
     std::future<ProcessedData> submit(RawData data) {
-        // TODO 10: Create a promise, get its future, and emplace the task into the queue.
-        std::promise<ProcessedData> p;
-        std::future<ProcessedData> f = p.get_future();
-        
-        {
-            std::lock_guard<std::mutex> lock(queue_mutex_);
-            task_queue_.emplace(std::move(data), std::move(p));
-        }
-        cv_.notify_one();
-        return f;
+        // TODO 9: Create a promise, get its future, push the task to your queue, and notify one waiting thread.
+        /* YOUR CODE HERE */
     }
 
-    // Signals the worker threads to start processing.
     void start_processing() {
-        std::cout << "[MAIN] Signaling workers to start." << std::endl;
-        // TODO 11: "Count down" the latch to unblock all waiting worker threads.
-        start_latch_.count_down();
+        // TODO 10: Signal the latch to start all workers.
+        /* YOUR CODE HERE */
     }
 
-    // Requests all threads to stop and waits for them to finish.
     ~TelemetryProcessor() {
-        std::cout << "[MAIN] Shutting down." << std::endl;
-        // TODO 12: Request stop on all jthreads. The destructor of std::jthread will automatically join.
-        for (auto& t : worker_threads_) {
-            t.request_stop();
-        }
-        // Notify all threads in case they are waiting on the condition variable.
-        cv_.notify_all();
+        // TODO 11: Request stop on all threads and notify all waiting threads.
+        /* YOUR CODE HERE */
     }
 };
 
+// Main function remains the same for testing.
 int main() {
     const int NUM_JOBS = 10;
     const int NUM_THREADS = 4;
-    const int NUM_LICENSES = 2; // Fewer licenses than threads to see the semaphore in action
+    const int NUM_LICENSES = 2;
 
-    std::cout << "[MAIN] Initializing Telemetry Processor with " << NUM_THREADS << " threads and " << NUM_LICENSES << " licenses." << std::endl;
     TelemetryProcessor processor(NUM_THREADS, NUM_LICENSES);
 
     std::vector<std::future<ProcessedData>> futures;
     for (int i = 0; i < NUM_JOBS; ++i) {
         futures.push_back(processor.submit({i, static_cast<double>(i)}));
     }
-    std::cout << "[MAIN] Submitted " << NUM_JOBS << " jobs." << std::endl;
-
+    
     processor.start_processing();
 
     double total_sum = 0;
     for (auto& f : futures) {
-        ProcessedData result = f.get(); // .get() blocks until the future is ready
-        std::cout << "[MAIN] Got result for ID " << result.source_id << ", value " << result.processed_value << std::endl;
-        total_sum += result.processed_value;
+        total_sum += f.get().processed_value;
     }
-
-    std::cout << "[MAIN] All jobs complete." << std::endl;
-    std::cout << "[MAIN] Final sum: " << total_sum << std::endl;
-
-    // The TelemetryProcessor destructor will be called here, cleanly shutting down threads.
+    
+    std::cout << "Final sum: " << total_sum << std::endl;
     return 0;
 }
 ```
