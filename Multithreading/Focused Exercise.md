@@ -113,21 +113,18 @@ int main() {
 #include <vector>
 #include <semaphore>
 
-// A semaphore that allows only 2 threads to access the resource at a time.
-std::counting_semaphore resource_semaphore(2);
+// TODO :: A semaphore that allows only 2 threads to access the resource at a time.
 
 void access_resource(int thread_id) {
     std::cout << "  [Thread " << thread_id << "] Waiting to access resource..." << std::endl;
     
     // TODO: Acquire a permit from the semaphore. This will block if 2 are already in use.
-    resource_semaphore.acquire();
     
     std::cout << "  -> [Thread " << thread_id << "] ACCESS GRANTED. Working..." << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(2));
     std::cout << "  <- [Thread " << thread_id << "] FINISHED. Releasing resource." << std::endl;
 
     // TODO: Release the permit back to the semaphore.
-    resource_semaphore.release();
 }
 
 int main() {
@@ -186,8 +183,6 @@ void racer(int id) {
     std::cout << "  [Racer " << id << "] Ready." << std::endl;
     
     // TODO: Decrement the latch and wait for it to reach zero.
-    race_latch.count_down();
-    race_latch.wait();
     
     std::cout << "  -> [Racer " << id << "] GO!" << std::endl;
 }
@@ -203,7 +198,6 @@ int main() {
     std::cout << "[MAIN] Get set..." << std::endl;
 
     // TODO: Decrement the latch from the main thread to release the racers.
-    race_latch.count_down();
 
     for (auto& r : racers) {
         r.join();
@@ -215,16 +209,16 @@ int main() {
 
 ```text
 [MAIN] On your marks...
-  [Racer 0] Preparing...
-  [Racer 0] Ready.
   [Racer 1] Preparing...
-  [Racer 2] Preparing...
   [Racer 1] Ready.
+  [Racer 2] Preparing...
+  [Racer 3] Preparing...
   [Racer 2] Ready.
+  [Racer 3] Ready.
 [MAIN] Get set...
   -> [Racer 1] GO!
   -> [Racer 2] GO!
-  -> [Racer 0] GO!
+  -> [Racer 3] GO!
 ```
 
 -----
