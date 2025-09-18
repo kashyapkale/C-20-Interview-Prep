@@ -115,6 +115,147 @@ Used for high-performance, non-blocking synchronization between threads.
 
 -----
 
+Of course. Let's break down the C++ concurrency lock types in a similar way, starting from the fundamental problem they solve.
+
+### The Core Problem: Race Conditions 🏁
+
+When multiple threads try to access and modify the same shared data at the same time, the result is unpredictable. This is called a **race condition**. Imagine two people trying to write on the same spot on a whiteboard simultaneously—the final message would be gibberish.
+
+The section of code that accesses the shared data is called a **critical section**. To prevent race conditions, we need to ensure that only one thread can be inside the critical section at a time. This is achieved using a **Mutex**.
+
+-----
+
+### The Primitive Tool: `std::mutex` (Mutual Exclusion) M
+
+A `std::mutex` is the most basic synchronization primitive. It's like a key to a room (the critical section).
+
+  * `mutex.lock()`: A thread calls this to acquire the key. If another thread already has it, this thread will **block** (wait) until the key is available.
+  * `mutex.unlock()`: The thread that holds the key calls this to release it, allowing another waiting thread to proceed.
+
+**The Danger of Manual Locking:**
+
+```cpp
+void bad_function(MyData& data) {
+    g_mutex.lock(); // Acquire the lock
+    // What if this line throws an exception?
+    data.do_something(); 
+    g_mutex.unlock(); // This line might never be reached!
+}
+```
+
+If an exception occurs, `unlock()` is never called. The mutex remains locked forever, and any other thread waiting for it will be stuck indefinitely (**deadlock**).
+
+This is why we use RAII-based lock wrappers, which automate the `lock()` and `unlock()` process.
+
+-----
+
+### 1\. `std::lock_guard` — The Simple Sentry 🔒
+
+A `std::lock_guard` is the simplest, most lightweight lock. It is a "fire-and-forget" RAII wrapper.
+
+**How it Works:**
+
+  * **Constructor:** Calls `mutex.lock()`.
+  * **Destructor:** Calls `mutex.unlock()`.
+
+That's it. It has no other functions. It locks the mutex when created and guarantees it's unlocked when the `lock_guard` goes out of scope, even if an exception is thrown.
+
+```cpp
+void good_function(MyData& data) {
+    std::lock_guard<std::mutex> guard(g_mutex); // Lock is acquired here
+    data.do_something();
+    // guard goes out of scope here, destructor is called, lock is released automatically
+}
+```
+
+**When to Use It:**
+
+  * **This should be your default choice.** Use it when you need to lock a mutex for the entire duration of a single scope (like a function or a block of code) and don't need any advanced features. It has the least overhead.
+
+-----
+
+### 2\. `std::unique_lock` — The Flexible Keyholder 🔑
+
+A `std::unique_lock` is a more powerful and flexible lock wrapper. It also follows RAII, but offers much more control over the lock. It represents **exclusive ownership** of a lock.
+
+**Key Features over `std::lock_guard`:**
+
+1.  **Deferred Locking:** You can create a `unique_lock` without locking the mutex immediately by passing `std::defer_lock`. This is essential for algorithms that need to lock multiple mutexes at once without causing deadlock (e.g., using `std::lock(lock1, lock2)`).
+2.  **Manual Control:** You can call `.lock()` and `.unlock()` on it multiple times within its lifetime. This is useful if you need to release the lock early in a scope to allow other threads to proceed.
+3.  **Timed Locking:** It can try to acquire a lock for a certain period of time (`try_lock_for`, `try_lock_until`).
+4.  **Ownership Transfer:** You can **move** a `unique_lock`, transferring the ownership of the lock from one object to another. You cannot copy it.
+
+**When to Use It:**
+
+  * **Working with Condition Variables:** This is the most critical use case. A `std::condition_variable`'s `wait()` function **requires** a `unique_lock`. The `wait()` function needs to be able to atomically unlock the mutex while it waits and re-lock it when it wakes up, a capability only `unique_lock` provides.
+  * When you need to unlock a mutex before the end of a scope.
+  * When you need to transfer ownership of a lock.
+
+<!-- end list -->
+
+```cpp
+void advanced_function(MyData& data) {
+    std::unique_lock<std::mutex> lock(g_mutex); // Lock acquired
+    data.prepare();
+    lock.unlock(); // Release lock early to let other threads work
+    // ... do some non-critical work ...
+    lock.lock(); // Re-acquire the lock
+    data.finalize();
+} // Lock is released here if not already unlocked
+```
+
+-----
+
+### 3\. `std::shared_lock` — The Reader's Pass 👥
+
+Both `lock_guard` and `unique_lock` are for **exclusive access**. This is often too strict. Consider a configuration map that's written once but read by many threads. It's perfectly safe for multiple threads to *read* at the same time. Making them wait for each other is inefficient.
+
+This is the **reader-writer problem**, and `std::shared_lock` is the solution.
+
+**How it Works:**
+It must be used with a `std::shared_mutex` (or `std::shared_timed_mutex`). This special mutex can be locked in two modes:
+
+  * **Exclusive Mode (`.lock()`):** Only one thread can hold the lock. Used for **writers**. A `unique_lock` is used to acquire this.
+  * **Shared Mode (`.lock_shared()`):** Multiple threads can hold the lock simultaneously. Used for **readers**. A `shared_lock` is used to acquire this.
+
+A `shared_lock` provides RAII for the shared mode. If any thread holds a shared lock, a thread trying to acquire an exclusive lock will block until all readers are finished. Likewise, if a thread holds an exclusive lock, all readers will block.
+
+```cpp
+std::shared_mutex g_shared_mutex;
+Config g_config;
+
+// Many threads can run this function concurrently
+std::string read_config(const std::string& key) {
+    std::shared_lock<std::shared_mutex> lock(g_shared_mutex); // Acquire shared lock
+    return g_config.get(key);
+} // Shared lock released
+
+// Only one thread can run this function at a time
+void write_config(const std::string& key, const std::string& value) {
+    std::unique_lock<std::shared_mutex> lock(g_shared_mutex); // Acquire exclusive lock
+    g_config.set(key, value);
+} // Exclusive lock released
+```
+
+**When to Use It:**
+
+  * As a performance optimization for data that is **read far more frequently than it is written**. If the read/write ratio is balanced or write-heavy, a simple `std::mutex` is often faster due to lower overhead.
+
+-----
+
+### Summary Table
+
+| Feature                 | `std::lock_guard`                                    | `std::unique_lock`                                                | `std::shared_lock`                                              |
+| ----------------------- | ---------------------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Lock Type** | **Exclusive** (Writer)                               | **Exclusive** (Writer)                                            | **Shared** (Reader)                                             |
+| **Mutex Type** | `std::mutex`, `std::recursive_mutex`, etc.           | `std::mutex`, `std::shared_mutex`, etc.                           | `std::shared_mutex`, `std::shared_timed_mutex`                  |
+| **Flexibility** | **Low**. Locks on construction, unlocks on destruction. | **High**. Allows deferred locking, manual control, timed locks. | **Low**. Locks shared on construction, unlocks on destruction. |
+| **Ownership** | Scope-bound, cannot be moved.                        | Owns the lock, **can be moved**.                                    | Owns a shared lock, can be moved.                               |
+| **Primary Use Case** | **Default choice** for simple, scope-based locking.  | **Condition variables**, complex lock management.                 | **Reader-writer scenarios** (high read, low write frequency). |
+| **Overhead** | **Lowest**.                                            | Higher than `lock_guard`.                                           | Higher than `lock_guard`.                                       |
+
+-----
+
 ### \#\# 🧠 Memory Management
 
 #### **RAII & Smart Pointers**
